@@ -53,8 +53,22 @@ def cross_entropy(pred,
     # average loss over non-ignored elements
     # pytorch's official cross_entropy average loss over non-ignored elements
     # refer to https://github.com/pytorch/pytorch/blob/56b43f4fec1f76953f15a627694d4bba34588969/torch/nn/functional.py#L2660  # noqa
-    if (avg_factor is None) and avg_non_ignore and reduction == 'mean':
-        avg_factor = label.numel() - (label == ignore_index).sum().item()
+    if (avg_factor is None) and reduction == 'mean':
+        if class_weight is None:
+            if avg_non_ignore:
+                avg_factor = label.numel() - (label
+                                              == ignore_index).sum().item()
+            else:
+                avg_factor = label.numel()
+
+        else:
+            # the average factor should take the class weights into account
+            label_weights = torch.tensor([class_weight[cls] for cls in label],
+                                         device=class_weight.device)
+            if avg_non_ignore:
+                label_weights[label == ignore_index] = 0
+            avg_factor = label_weights.sum()
+
     if weight is not None:
         weight = weight.float()
     loss = weight_reduce_loss(
@@ -124,7 +138,7 @@ def binary_cross_entropy(pred,
         assert label[label != ignore_index].max() <= 1, \
             'For pred with shape [N, 1, H, W], its label must have at ' \
             'most 2 classes'
-        pred = pred.squeeze()
+        pred = pred.squeeze(1)
     if pred.dim() != label.dim():
         assert (pred.dim() == 2 and label.dim() == 1) or (
                 pred.dim() == 4 and label.dim() == 3), \

@@ -30,6 +30,7 @@ def _get_config_directory():
 def test_config_build_segmentor():
     """Test that all segmentation models defined in the configs can be
     initialized."""
+    init_default_scope('mmseg')
     config_dpath = _get_config_directory()
     print(f'Found config_dpath = {config_dpath!r}')
 
@@ -92,7 +93,12 @@ def test_config_data_pipeline():
         del config_mod.train_pipeline[0]
         del config_mod.test_pipeline[0]
         # remove loading annotation in test pipeline
-        del config_mod.test_pipeline[-2]
+        load_anno_idx = -1
+        for i in range(len(config_mod.test_pipeline)):
+            if config_mod.test_pipeline[i].type in ('LoadAnnotations',
+                                                    'LoadDepthAnnotation'):
+                load_anno_idx = i
+        del config_mod.test_pipeline[load_anno_idx]
 
         train_pipeline = Compose(config_mod.train_pipeline)
         test_pipeline = Compose(config_mod.test_pipeline)
@@ -101,6 +107,7 @@ def test_config_data_pipeline():
         if to_float32:
             img = img.astype(np.float32)
         seg = np.random.randint(0, 255, size=(1024, 2048, 1), dtype=np.uint8)
+        depth = np.random.rand(1024, 2048).astype(np.float32)
 
         results = dict(
             filename='test_img.png',
@@ -108,22 +115,28 @@ def test_config_data_pipeline():
             img=img,
             img_shape=img.shape,
             ori_shape=img.shape,
-            gt_seg_map=seg)
+            gt_seg_map=seg,
+            gt_depth_map=depth)
         results['seg_fields'] = ['gt_seg_map']
-
+        _check_concat_cd_input(config_mod, results)
         print(f'Test training data pipeline: \n{train_pipeline!r}')
         output_results = train_pipeline(results)
         assert output_results is not None
 
-        results = dict(
-            filename='test_img.png',
-            ori_filename='test_img.png',
-            img=img,
-            img_shape=img.shape,
-            ori_shape=img.shape)
+        _check_concat_cd_input(config_mod, results)
         print(f'Test testing data pipeline: \n{test_pipeline!r}')
         output_results = test_pipeline(results)
         assert output_results is not None
+
+
+def _check_concat_cd_input(config_mod: Config, results: dict):
+    keys = []
+    pipeline = config_mod.train_pipeline.copy()
+    pipeline.extend(config_mod.test_pipeline)
+    for t in pipeline:
+        keys.append(t.type)
+    if 'ConcatCDInput' in keys:
+        results.update({'img2': results['img']})
 
 
 def _check_decode_head(decode_head_cfg, decode_head):
@@ -149,14 +162,14 @@ def _check_decode_head(decode_head_cfg, decode_head):
     elif input_transform == 'resize_concat':
         assert sum(in_channels) == decode_head.in_channels
     else:
-        assert isinstance(in_channels, int)
         assert in_channels == decode_head.in_channels
-        assert isinstance(decode_head.in_index, int)
 
     if decode_head_cfg['type'] == 'PointHead':
         assert decode_head_cfg.channels+decode_head_cfg.num_classes == \
                decode_head.fc_seg.in_channels
         assert decode_head.fc_seg.out_channels == decode_head_cfg.num_classes
+    elif decode_head_cfg['type'] == 'VPDDepthHead':
+        assert decode_head.out_channels == 1
     else:
         assert decode_head_cfg.channels == decode_head.conv_seg.in_channels
         assert decode_head.conv_seg.out_channels == decode_head_cfg.num_classes

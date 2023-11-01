@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import copy
 import os.path as osp
+from unittest import TestCase
 
 import mmcv
 import numpy as np
@@ -11,7 +12,8 @@ from PIL import Image
 from mmseg.datasets.transforms import *  # noqa
 from mmseg.datasets.transforms import (LoadBiomedicalData,
                                        LoadBiomedicalImageFromFile,
-                                       PhotoMetricDistortion, RandomCrop)
+                                       PhotoMetricDistortion, RandomCrop,
+                                       RandomDepthMix)
 from mmseg.registry import TRANSFORMS
 
 init_default_scope('mmseg')
@@ -183,6 +185,14 @@ def test_flip():
     results = flip_module(results)
     assert np.equal(original_img, results['img']).all()
     assert np.equal(original_seg, results['gt_semantic_seg']).all()
+
+    results['gt_depth_map'] = seg
+    results['seg_fields'] = ['gt_depth_map']
+    results = flip_module(results)
+    flip_module = TRANSFORMS.build(transform)
+    results = flip_module(results)
+    assert np.equal(original_img, results['img']).all()
+    assert np.equal(original_seg, results['gt_depth_map']).all()
 
 
 def test_random_rotate_flip():
@@ -1160,3 +1170,104 @@ def test_biomedical_3d_flip():
     results = transform(results)
     assert np.equal(original_img, results['img']).all()
     assert np.equal(original_seg, results['gt_seg_map']).all()
+
+
+def test_albu_transform():
+    results = dict(
+        img_path=osp.join(osp.dirname(__file__), '../data/color.jpg'))
+
+    # Define simple pipeline
+    load = dict(type='LoadImageFromFile')
+    load = TRANSFORMS.build(load)
+
+    albu_transform = dict(
+        type='Albu', transforms=[dict(type='ChannelShuffle', p=1)])
+    albu_transform = TRANSFORMS.build(albu_transform)
+
+    normalize = dict(type='Normalize', mean=[0] * 3, std=[0] * 3, to_rgb=True)
+    normalize = TRANSFORMS.build(normalize)
+
+    # Execute transforms
+    results = load(results)
+    results = albu_transform(results)
+    results = normalize(results)
+
+    assert results['img'].dtype == np.float32
+
+
+def test_albu_channel_order():
+    results = dict(
+        img_path=osp.join(osp.dirname(__file__), '../data/color.jpg'))
+
+    # Define simple pipeline
+    load = dict(type='LoadImageFromFile')
+    load = TRANSFORMS.build(load)
+
+    # Transform is modifying B channel
+    albu_transform = dict(
+        type='Albu',
+        transforms=[
+            dict(
+                type='RGBShift',
+                r_shift_limit=0,
+                g_shift_limit=0,
+                b_shift_limit=200,
+                p=1)
+        ])
+    albu_transform = TRANSFORMS.build(albu_transform)
+
+    # Execute transforms
+    results_load = load(results)
+    results_albu = albu_transform(results_load)
+
+    # assert only Green and Red channel are not modified
+    np.testing.assert_array_equal(results_albu['img'][..., 1:],
+                                  results_load['img'][..., 1:])
+
+    # assert Blue channel is modified
+    with pytest.raises(AssertionError):
+        np.testing.assert_array_equal(results_albu['img'][..., 0],
+                                      results_load['img'][..., 0])
+
+
+class TestRandomDepthMix(TestCase):
+
+    def setUp(self):
+        self.transform = RandomDepthMix(prob=1.0)
+
+    def test_transform_shape(self):
+        # Create a dummy result dict
+        results = {
+            'img_shape': (10, 10),
+            'img': np.random.rand(10, 10, 3),
+            'gt_depth_map': np.random.rand(10, 10)
+        }
+        transformed = self.transform.transform(results)
+
+        # Check if the shape remains the same
+        self.assertEqual(results['img'].shape, transformed['img'].shape)
+
+    def test_transform_values(self):
+        # Create a dummy result dict
+        results = {
+            'img_shape': (10, 10),
+            'img': np.zeros((10, 10, 3)),
+            'gt_depth_map': np.ones((10, 10))
+        }
+        transformed = self.transform.transform(results)
+
+        # Assuming the transformation modifies a portion of the image,
+        # it shouldn't remain all zeros
+        self.assertFalse(np.all(transformed['img'] == 0))
+
+    def test_invalid_image_dimension(self):
+        # Create a dummy result dict with invalid image dimension
+        results = {
+            'img_shape': (10, 10),
+            'img': np.random.rand(10, 10, 3, 3),
+            'gt_depth_map': np.random.rand(10, 10)
+        }
+
+        # Check if a ValueError is raised for invalid dimension
+        with self.assertRaises(ValueError):
+            self.transform.transform(results)

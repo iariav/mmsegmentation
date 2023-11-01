@@ -8,6 +8,7 @@ Import:
 - configs/cgnet/metafile.yaml
 - configs/convnext/metafile.yaml
 - configs/danet/metafile.yaml
+- configs/ddrnet/metafile.yaml
 - configs/deeplabv3/metafile.yaml
 - configs/deeplabv3plus/metafile.yaml
 - configs/dmnet/metafile.yaml
@@ -37,6 +38,7 @@ Import:
 - configs/psanet/metafile.yaml
 - configs/pspnet/metafile.yaml
 - configs/resnest/metafile.yaml
+- configs/san/metafile.yaml
 - configs/segformer/metafile.yaml
 - configs/segmenter/metafile.yaml
 - configs/segnext/metafile.yaml
@@ -48,3 +50,4 @@ Import:
 - configs/unet/metafile.yaml
 - configs/upernet/metafile.yaml
 - configs/vit/metafile.yaml
+- configs/vpd/metafile.yaml

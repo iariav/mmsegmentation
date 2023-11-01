@@ -3,6 +3,7 @@ from .beit import BEiT
 from .bisenetv1 import BiSeNetV1
 from .bisenetv2 import BiSeNetV2
 from .cgnet import CGNet
+from .ddrnet import DDRNet
 from .erfnet import ERFNet
 from .fast_scnn import FastSCNN
 from .hrnet import HRNet
@@ -22,11 +23,13 @@ from .timm_backbone import TIMMBackbone
 from .twins import PCPVT, SVT
 from .unet import UNet
 from .vit import VisionTransformer
+from .vpd import VPD
 
 __all__ = [
     'ResNet', 'ResNetV1c', 'ResNetV1d', 'ResNeXt', 'HRNet', 'FastSCNN',
     'ResNeSt', 'MobileNetV2', 'UNet', 'CGNet', 'MobileNetV3',
     'VisionTransformer', 'SwinTransformer', 'MixVisionTransformer',
     'BiSeNetV1', 'BiSeNetV2', 'ICNet', 'TIMMBackbone', 'ERFNet', 'PCPVT',
-    'SVT', 'STDCNet', 'STDCContextPathNet', 'BEiT', 'MAE', 'PIDNet', 'MSCAN'
+    'SVT', 'STDCNet', 'STDCContextPathNet', 'BEiT', 'MAE', 'PIDNet', 'MSCAN',
+    'DDRNet', 'VPD'
 ]
