@@ -265,7 +265,7 @@ class RandomCrop(BaseTransform):
 
         img = results['img']
         crop_bbox = generate_crop_bbox(img)
-        if self.cat_max_ratio < 1.:
+        if self.cat_max_ratio < 1. and 'gt_seg_map' in results:
             # Repeat 10 times
             for _ in range(10):
                 seg_temp = self.crop(results['gt_seg_map'], crop_bbox)
@@ -315,6 +315,10 @@ class RandomCrop(BaseTransform):
         for key in results.get('seg_fields', []):
             results[key] = self.crop(results[key], crop_bbox)
 
+        # crop depth
+        for key in results.get('depth_fields', []):
+            results[key] = self.crop(results[key], crop_bbox)
+
         results['img'] = img
         results['img_shape'] = img.shape[:2]
         return results
@@ -322,6 +326,129 @@ class RandomCrop(BaseTransform):
     def __repr__(self):
         return self.__class__.__name__ + f'(crop_size={self.crop_size})'
 
+@TRANSFORMS.register_module()
+class CenterCrop(BaseTransform):
+    """center crop the image & seg.
+
+    Required Keys:
+
+    - img
+    - gt_seg_map
+
+    Modified Keys:
+
+    - img
+    - img_shape
+    - gt_seg_map
+
+
+    Args:
+        crop_size (Union[int, Tuple[int, int]]):  Expected size after cropping
+            with the format of (h, w). If set to an integer, then cropping
+            width and height are equal to this integer.
+        cat_max_ratio (float): The maximum ratio that single category could
+            occupy.
+        ignore_index (int): The label index to be ignored. Default: 255
+    """
+
+    def __init__(self,
+                 crop_size: Union[int, Tuple[int, int]],
+                 cat_max_ratio: float = 1.,
+                 ignore_index: int = 255):
+        super().__init__()
+        assert isinstance(crop_size, int) or (
+            isinstance(crop_size, tuple) and len(crop_size) == 2
+        ), 'The expected crop_size is an integer, or a tuple containing two '
+        'intergers'
+
+        if isinstance(crop_size, int):
+            crop_size = (crop_size, crop_size)
+        assert crop_size[0] > 0 and crop_size[1] > 0
+        self.crop_size = crop_size
+        self.cat_max_ratio = cat_max_ratio
+        self.ignore_index = ignore_index
+
+    @cache_randomness
+    def crop_bbox(self, results: dict) -> tuple:
+        """get a crop bounding box.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            tuple: Coordinates of the cropped image.
+        """
+
+        def generate_crop_bbox(img: np.ndarray) -> tuple:
+            """Randomly get a crop bounding box.
+
+            Args:
+                img (np.ndarray): Original input image.
+
+            Returns:
+                tuple: Coordinates of the cropped image.
+            """
+
+            margin_h = max(img.shape[0] - self.crop_size[0], 0)
+            margin_w = max(img.shape[1] - self.crop_size[1], 0)
+            offset_h = margin_h // 2 #np.random.randint(0, margin_h + 1)
+            offset_w = margin_w // 2 #np.random.randint(0, margin_w + 1)
+            crop_y1, crop_y2 = offset_h, offset_h + self.crop_size[0]
+            crop_x1, crop_x2 = offset_w, offset_w + self.crop_size[1]
+
+            return crop_y1, crop_y2, crop_x1, crop_x2
+
+        img = results['img']
+        crop_bbox = generate_crop_bbox(img)
+        return crop_bbox
+
+    def crop(self, img: np.ndarray, crop_bbox: tuple) -> np.ndarray:
+        """Crop from ``img``
+
+        Args:
+            img (np.ndarray): Original input image.
+            crop_bbox (tuple): Coordinates of the cropped image.
+
+        Returns:
+            np.ndarray: The cropped image.
+        """
+
+        crop_y1, crop_y2, crop_x1, crop_x2 = crop_bbox
+        img = img[crop_y1:crop_y2, crop_x1:crop_x2, ...]
+        return img
+
+    def transform(self, results: dict) -> dict:
+        """Transform function to randomly crop images, semantic segmentation
+        maps.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Randomly cropped results, 'img_shape' key in result dict is
+                updated according to crop size.
+        """
+
+        img = results['img']
+        crop_bbox = self.crop_bbox(results)
+
+        # crop the image
+        img = self.crop(img, crop_bbox)
+
+        # crop semantic seg
+        for key in results.get('seg_fields', []):
+            results[key] = self.crop(results[key], crop_bbox)
+
+        # crop depth
+        for key in results.get('depth_fields', []):
+            results[key] = self.crop(results[key], crop_bbox)
+
+        results['img'] = img
+        results['img_shape'] = img.shape[:2]
+        return results
+
+    def __repr__(self):
+        return self.__class__.__name__ + f'(crop_size={self.crop_size})'
 
 @TRANSFORMS.register_module()
 class RandomRotate(BaseTransform):
@@ -735,6 +862,91 @@ class PhotoMetricDistortion(BaseTransform):
                      f'hue_delta={self.hue_delta})')
         return repr_str
 
+
+@TRANSFORMS.register_module()
+class RandomFillDepthData(BaseTransform):
+    """Random fill depth data at max_depth
+
+    Required Keys:
+
+    - img
+
+    Modified Keys:
+
+    - img
+
+    Args:
+        max_depth (float):
+    """
+
+    def __init__(self,
+                 max_depth: float = 65.0):
+
+        self.max_depth = max_depth
+
+    def rolling_window(self,
+                        depth: np.ndarray,
+                        size_kernel: int = 10,
+                        stride: int = 10) -> np.ndarray:
+
+        """Function to get rolling windows.
+
+        Arguments:
+            input_array {numpy.array} -- Input, by default it only works with depth equals to 1.
+                                          It will be treated as a (height, width) image. If the input have (height, width, channel)
+                                          dimensions, it will be rescaled to two-dimension (height, width)
+            size_kernel {int} -- size of kernel to be applied. Usually 3,5,7. It means that a kernel of (size_kernel, size_kernel) will be applied
+                                 to the image.
+            stride {int or tuple} -- horizontal and vertical displacement
+
+        Keyword Arguments:
+            print_dims {bool} -- [description] (default: {True})
+
+        Returns:
+            [list] -- A list with the resulting numpy.arrays
+        """
+        if random.randint(2):
+
+            size_kernel = stride = random.randint(7,20)
+            # Stride: horizontal and vertical displacement
+            sh, sw = stride, stride
+
+            # Input dimension (height, width)
+            n_ah, n_aw = depth.shape
+
+            # Filter dimension (or window)
+            n_k = size_kernel
+
+            # Initialize row position
+            for i in range(n_k // 2, n_ah - 150 - n_k // 2, sh):
+                for j in range(n_k // 2, n_aw - n_k // 2, sw):
+                    # Get one window
+                    sub_array = depth[i - n_k // 2:i + n_k // 2, j - n_k // 2:j + n_k // 2]
+                    # if sub array is all zeros add max_dist
+                    if np.all(sub_array == 0):
+                        depth[i, j] = self.max_depth
+
+        return depth
+
+    def transform(self, results: dict) -> dict:
+        """Transform function to perform photometric distortion on images.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Result dict with images distorted.
+        """
+
+        depth = results['depth_gt']
+        # random depth completion
+        depth = self.rolling_window(depth)
+        results['depth_gt'] = depth
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        return repr_str
 
 @TRANSFORMS.register_module()
 class RandomCutOut(BaseTransform):

@@ -6,7 +6,7 @@ from .cc_head import CCHead
 from .da_head import DAHead
 from .dm_head import DMHead
 from .dnl_head import DNLHead
-from .dpt_head import DPTHead
+from .dpt_head import DPTHead,DPTHeadDepth
 from .ema_head import EMAHead
 from .enc_head import EncHead
 from .fcn_head import FCNHead
@@ -32,6 +32,7 @@ from .setr_mla_head import SETRMLAHead
 from .setr_up_head import SETRUPHead
 from .stdc_head import STDCHead
 from .uper_head import UPerHead
+from .PixelFormer_head import PixelFormerHead
 
 __all__ = [
     'FCNHead', 'PSPHead', 'ASPPHead', 'PSAHead', 'NLHead', 'GCHead', 'CCHead',
@@ -41,5 +42,5 @@ __all__ = [
     'SETRMLAHead', 'DPTHead', 'SETRMLAHead', 'SegmenterMaskTransformerHead',
     'SegformerHead', 'ISAHead', 'STDCHead', 'IterativeDecodeHead',
     'KernelUpdateHead', 'KernelUpdator', 'MaskFormerHead', 'Mask2FormerHead',
-    'LightHamHead', 'PIDHead'
+    'LightHamHead', 'PIDHead','DPTHeadDepth', 'PixelFormerHead'
 ]

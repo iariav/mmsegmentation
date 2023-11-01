@@ -78,8 +78,9 @@ class ReassembleBlocks(BaseModule):
         assert isinstance(inputs, list)
         out = []
         for i, x in enumerate(inputs):
-            assert len(x) == 2
-            x, cls_token = x[0], x[1]
+            # assert len(x) == 2
+            # x, cls_token = x[0], x[1]
+            cls_token = []
             feature_shape = x.shape
             if self.readout_type == 'project':
                 x = x.flatten(2).permute((0, 2, 1))
@@ -91,7 +92,7 @@ class ReassembleBlocks(BaseModule):
                 x = x.reshape(feature_shape)
             else:
                 pass
-            x = self.projects[i](x)
+            # x = self.projects[i](x)
             x = self.resize_layers[i](x)
             out.append(x)
         return out
@@ -292,3 +293,188 @@ class DPTHead(BaseDecodeHead):
         out = self.project(out)
         out = self.cls_seg(out)
         return out
+
+class Interpolate(nn.Module):
+    """Interpolation module."""
+
+    def __init__(self, scale_factor, mode, align_corners=False):
+        """Init.
+
+        Args:
+            scale_factor (float): scaling
+            mode (str): interpolation mode
+        """
+        super(Interpolate, self).__init__()
+
+        self.interp = nn.functional.interpolate
+        self.scale_factor = scale_factor
+        self.mode = mode
+        self.align_corners = align_corners
+
+    def forward(self, x):
+        """Forward pass.
+
+        Args:
+            x (tensor): input
+
+        Returns:
+            tensor: interpolated data
+        """
+
+        x = self.interp(
+            x,
+            scale_factor=self.scale_factor,
+            mode=self.mode,
+            align_corners=self.align_corners,
+        )
+
+        return x
+@MODELS.register_module()
+class DPTHeadDepth(BaseDecodeHead):
+    """Vision Transformers for Dense Prediction.
+
+    This head is implemented of `DPT <https://arxiv.org/abs/2103.13413>`_.
+
+    Args:
+        embed_dims (int): The embed dimension of the ViT backbone.
+            Default: 768.
+        post_process_channels (List): Out channels of post process conv
+            layers. Default: [96, 192, 384, 768].
+        readout_type (str): Type of readout operation. Default: 'ignore'.
+        patch_size (int): The patch size. Default: 16.
+        expand_channels (bool): Whether expand the channels in post process
+            block. Default: False.
+        act_cfg (dict): The activation config for residual conv unit.
+            Default dict(type='ReLU').
+        norm_cfg (dict): Config dict for normalization layer.
+            Default: dict(type='BN').
+    """
+
+    def __init__(self,
+                 embed_dims=768,
+                 post_process_channels=[96, 192, 384, 768],
+                 readout_type='ignore',
+                 patch_size=16,
+                 expand_channels=False,
+                 act_cfg=dict(type='ReLU'),
+                 norm_cfg=dict(type='BN'),
+                 **kwargs):
+        super().__init__(**kwargs)
+
+        self.in_channels = self.in_channels
+        self.expand_channels = expand_channels
+        self.reassemble_blocks = ReassembleBlocks(embed_dims,
+                                                  post_process_channels,
+                                                  readout_type, patch_size)
+
+        self.post_process_channels = [
+            channel * math.pow(2, i) if expand_channels else channel
+            for i, channel in enumerate(post_process_channels)
+        ]
+        self.convs = nn.ModuleList()
+        for channel in self.post_process_channels:
+            self.convs.append(
+                ConvModule(
+                    channel,
+                    self.channels,
+                    kernel_size=3,
+                    padding=1,
+                    act_cfg=None,
+                    bias=False))
+        self.fusion_blocks = nn.ModuleList()
+        for _ in range(len(self.convs)):
+            self.fusion_blocks.append(
+                FeatureFusionBlock(self.channels, act_cfg, norm_cfg))
+        self.fusion_blocks[0].res_conv_unit1 = None
+        self.head = nn.Sequential(
+            nn.Conv2d(self.channels, self.channels // 2, kernel_size=3, stride=1, padding=1),
+            Interpolate(scale_factor=2, mode="bilinear", align_corners=True),
+            nn.Conv2d(self.channels // 2, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(True),
+            nn.Conv2d(32, 1, kernel_size=1, stride=1, padding=0),
+            nn.ReLU(True),
+            nn.Identity(),
+        )
+
+        self.num_fusion_blocks = len(self.fusion_blocks)
+        self.num_reassemble_blocks = len(self.reassemble_blocks.resize_layers)
+        self.num_post_process_channels = len(self.post_process_channels)
+        assert self.num_fusion_blocks == self.num_reassemble_blocks
+        assert self.num_reassemble_blocks == self.num_post_process_channels
+
+    def forward(self, inputs):
+        assert len(inputs) == self.num_reassemble_blocks
+        x = self._transform_inputs(inputs)
+        x = self.reassemble_blocks(x)
+        x = [self.convs[i](feature) for i, feature in enumerate(x)]
+        out = self.fusion_blocks[0](x[-1])
+        for i in range(1, len(self.fusion_blocks)):
+            out = self.fusion_blocks[i](out, x[-(i + 1)])
+        out = self.head(out)
+        return out
+
+    def loss(self, inputs, batch_data_samples,
+             train_cfg):
+        """Forward function for training.
+
+        Args:
+            inputs (Tuple[Tensor]): List of multi-level img features.
+            batch_data_samples (list[:obj:`SegDataSample`]): The seg
+                data samples. It usually includes information such
+                as `img_metas` or `gt_semantic_seg`.
+            train_cfg (dict): The training config.
+
+        Returns:
+            dict[str, Tensor]: a dictionary of loss components
+        """
+        pred_depth = self.forward(inputs)
+        losses = self.loss_by_feat(pred_depth, batch_data_samples)
+        return losses
+
+    def _stack_batch_gt_depth(self, batch_data_samples):
+        gt_depths = [
+            data_sample.gt_depth.data for data_sample in batch_data_samples
+        ]
+        return torch.stack(gt_depths, dim=0)
+    def loss_by_feat(self, pred_depth,
+                     batch_data_samples):
+        """Compute segmentation loss.
+
+        Args:
+            seg_logits (Tensor): The output from decode head forward function.
+            batch_data_samples (List[:obj:`SegDataSample`]): The seg
+                data samples. It usually includes information such
+                as `metainfo` and `gt_sem_seg`.
+
+        Returns:
+            dict[str, Tensor]: a dictionary of loss components
+        """
+
+        gt_depths = self._stack_batch_gt_depth(batch_data_samples)
+        loss = dict()
+        pred_depth = resize(
+            input=pred_depth,
+            size=gt_depths.shape[2:],
+            mode='bilinear',
+            align_corners=self.align_corners)
+
+        # seg_label = seg_label.squeeze(1)
+
+        if not isinstance(self.loss_decode, nn.ModuleList):
+            losses_decode = [self.loss_decode]
+        else:
+            losses_decode = self.loss_decode
+        for loss_decode in losses_decode:
+            if loss_decode.loss_name not in loss:
+                loss[loss_decode.loss_name] = loss_decode(
+                    pred_depth,
+                    gt_depths)
+            else:
+                loss[loss_decode.loss_name] += loss_decode(
+                    pred_depth,
+                    gt_depths)
+
+        # loss['acc_seg'] = accuracy(
+        #     seg_logits, seg_label, ignore_index=self.ignore_index)
+
+        return loss

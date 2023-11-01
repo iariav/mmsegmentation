@@ -94,20 +94,39 @@ def stack_batch(inputs: List[torch.Tensor],
         # pad gt_sem_seg
         if data_samples is not None:
             data_sample = data_samples[i]
-            gt_sem_seg = data_sample.gt_sem_seg.data
-            del data_sample.gt_sem_seg.data
-            data_sample.gt_sem_seg.data = F.pad(
-                gt_sem_seg, padding_size, value=seg_pad_val)
-            if 'gt_edge_map' in data_sample:
+            # print(data_sample)
+            if 'gt_depth' in data_sample and 'thermal' in data_sample.img_path:
+                gt_depth = data_sample.gt_depth.data
+                del data_sample.gt_depth.data
+                data_sample.gt_depth.data = F.pad(
+                    gt_depth, padding_size, value=0.0)
+            elif 'NAS/thermal' in data_sample.img_path:
+                gt_sem_seg = data_sample.gt_sem_seg.data
+                del data_sample.gt_sem_seg.data
+                data_sample.gt_sem_seg.data = F.pad(
+                    gt_sem_seg, padding_size, value=seg_pad_val)
+            elif 'DepthTrainingData' in data_sample.img_path:
+                gt_depth = data_sample.gt_depth.data
+                del data_sample.gt_depth.data
+                data_sample.gt_depth.data = F.pad(
+                    gt_depth, padding_size, value=0.0)
+            elif 'gt_edge_map' in data_sample:
                 gt_edge_map = data_sample.gt_edge_map.data
                 del data_sample.gt_edge_map.data
                 data_sample.gt_edge_map.data = F.pad(
                     gt_edge_map, padding_size, value=seg_pad_val)
-            data_sample.set_metainfo({
-                'img_shape': tensor.shape[-2:],
-                'pad_shape': data_sample.gt_sem_seg.shape,
-                'padding_size': padding_size
-            })
+            elif 'SegmentationTrainingData' in data_sample.img_path: ## was if 'SegmentationTrainingData' in data_sample.img_path:
+                data_sample.set_metainfo({
+                    'img_shape': tensor.shape[-2:],
+                    'pad_shape': data_sample.gt_sem_seg.shape,
+                    'padding_size': padding_size
+                })
+            else:
+                data_sample.set_metainfo({
+                    'img_shape': tensor.shape[-2:],
+                    'pad_shape': data_sample.gt_depth.shape,
+                    'padding_size': padding_size
+                })
             padded_samples.append(data_sample)
         else:
             padded_samples.append(

@@ -1,7 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from typing import List, Optional
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
@@ -15,7 +14,7 @@ from mmengine.structures import PixelData
 from ..utils import resize
 
 @MODELS.register_module()
-class EncoderDecoder(BaseSegmentor):
+class EncoderDecoderMultihead(BaseSegmentor):
     """Encoder Decoder segmentors.
 
     EncoderDecoder typically consists of backbone, decode_head, auxiliary_head.
@@ -129,14 +128,15 @@ class EncoderDecoder(BaseSegmentor):
         map of the same size as input."""
 
         x = self.extract_feat(inputs)
-        if 'seg_map_path' in batch_img_metas[0] and 'ThermalLabels' in batch_img_metas[0]['seg_map_path']:
-        # if 'seg_map_path' in batch_img_metas[0]:
+        if 'SegmentationTrainingData' in batch_img_metas[0]['img_path']:
+            print(batch_img_metas[0])
             seg_logits = self.decode_head.predict(x, batch_img_metas,
                                                   self.test_cfg)
             return seg_logits
         else: # predict depth
             pred_depth = self.auxiliary_head.predict(x, batch_img_metas,
                                                   self.test_cfg)
+            # print(pred_depth)
             return pred_depth
 
 
@@ -293,11 +293,7 @@ class EncoderDecoder(BaseSegmentor):
                     padding_size=[0, 0, 0, 0])
             ] * inputs.shape[0]
 
-        # print(inputs[0].shape)
-        # print(data_samples)
-        # batch_img_metas[0]['seg_map_path'] = 'ThermalLabels'
-        # if 'SegmentationTrainingData' in batch_img_metas[0]['img_path']:
-        if 'seg_map_path' in batch_img_metas[0]:
+        if 'seg_map_path' in data_samples[0]:
             seg_logits = self.inference(inputs, batch_img_metas)
             return self.postprocess_result(seg_logits, data_samples)
         else: # predict depth
@@ -318,12 +314,7 @@ class EncoderDecoder(BaseSegmentor):
             Tensor: Forward output of model without any post-processes.
         """
         x = self.extract_feat(inputs)
-        pred_seg = self.decode_head.forward(x) # self.decode_head.predict(x, data_samples, self.test_cfg)
-        # pred_seg = F.interpolate(pred_seg,scale_factor=4,mode='bilinear')
-        # pred_seg = torch.argmax(pred_seg, dim=1)
-        pred_depth = self.auxiliary_head.forward(x)
-        return pred_seg, pred_depth
-        # return self.decode_head.forward(x),self.auxiliary_head.forward(x)
+        return self.decode_head.forward(x), self.auxiliary_head.forward(x)
 
     def slide_inference(self, inputs: Tensor,
                         batch_img_metas: List[dict]) -> Tensor:

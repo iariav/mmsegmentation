@@ -229,3 +229,68 @@ class SegLocalVisualizer(Visualizer):
             mmcv.imwrite(mmcv.bgr2rgb(drawn_img), out_file)
         else:
             self.add_image(name, drawn_img, step)
+
+    def add_depth_datasample(
+            self,
+            name: str,
+            image: np.ndarray,
+            data_sample: Optional[SegDataSample] = None,
+            draw_gt: bool = True,
+            draw_pred: bool = True,
+            show: bool = False,
+            wait_time: float = 0,
+            # TODO: Supported in mmengine's Viusalizer.
+            out_file: Optional[str] = None,
+            step: int = 0) -> None:
+        """Draw datasample and save to all backends.
+
+        - If GT and prediction are plotted at the same time, they are
+        displayed in a stitched image where the left image is the
+        ground truth and the right image is the prediction.
+        - If ``show`` is True, all storage backends are ignored, and
+        the images will be displayed in a local window.
+        - If ``out_file`` is specified, the drawn image will be
+        saved to ``out_file``. it is usually used when the display
+        is not available.
+
+        Args:
+            name (str): The image identifier.
+            image (np.ndarray): The image to draw.
+            gt_sample (:obj:`SegDataSample`, optional): GT SegDataSample.
+                Defaults to None.
+            pred_sample (:obj:`SegDataSample`, optional): Prediction
+                SegDataSample. Defaults to None.
+            draw_gt (bool): Whether to draw GT SegDataSample. Default to True.
+            draw_pred (bool): Whether to draw Prediction SegDataSample.
+                Defaults to True.
+            show (bool): Whether to display the drawn image. Default to False.
+            wait_time (float): The interval of show (s). Defaults to 0.
+            out_file (str): Path to output file. Defaults to None.
+            step (int): Global step value to record. Defaults to 0.
+        """
+
+        gt_img_data = None
+        pred_img_data = None
+
+        if (draw_pred and data_sample is not None
+                and 'pred_sem_seg' in data_sample):
+            pred_img_data = image
+
+            pred_img_data = self._draw_sem_seg(pred_img_data,
+                                               data_sample.pred_sem_seg,
+                                               classes, palette)
+
+        if gt_img_data is not None and pred_img_data is not None:
+            drawn_img = np.concatenate((gt_img_data, pred_img_data), axis=1)
+        elif gt_img_data is not None:
+            drawn_img = gt_img_data
+        else:
+            drawn_img = pred_img_data
+
+        if show:
+            self.show(drawn_img, win_name=name, wait_time=wait_time)
+
+        if out_file is not None:
+            mmcv.imwrite(mmcv.bgr2rgb(drawn_img), out_file)
+        else:
+            self.add_image(name, drawn_img, step)

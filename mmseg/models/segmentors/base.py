@@ -143,7 +143,7 @@ class BaseSegmentor(BaseModel, metaclass=ABCMeta):
                 segmentation before normalization.
         """
         batch_size, C, H, W = seg_logits.shape
-
+        # print(seg_logits.shape)
         if data_samples is None:
             data_samples = [SegDataSample() for _ in range(batch_size)]
             only_prediction = True
@@ -174,10 +174,11 @@ class BaseSegmentor(BaseModel, metaclass=ABCMeta):
                     else:
                         i_seg_logits = i_seg_logits.flip(dims=(2, ))
 
+                # print(img_meta['img_shape'])
                 # resize as original shape
                 i_seg_logits = resize(
                     i_seg_logits,
-                    size=img_meta['ori_shape'],
+                    size=img_meta['img_shape'],
                     mode='bilinear',
                     align_corners=self.align_corners,
                     warning=False).squeeze(0)

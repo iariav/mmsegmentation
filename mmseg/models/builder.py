@@ -40,6 +40,7 @@ def build_loss(cfg):
 
 def build_segmentor(cfg, train_cfg=None, test_cfg=None):
     """Build segmentor."""
+    del cfg['data_preprocessor']
     if train_cfg is not None or test_cfg is not None:
         warnings.warn(
             'train_cfg and test_cfg is deprecated, '

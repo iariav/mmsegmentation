@@ -5,6 +5,7 @@ from typing import Dict, Optional, Union
 import mmcv
 import mmengine.fileio as fileio
 import numpy as np
+from PIL import Image
 from mmcv.transforms import BaseTransform
 from mmcv.transforms import LoadAnnotations as MMCV_LoadAnnotations
 from mmcv.transforms import LoadImageFromFile
@@ -127,6 +128,198 @@ class LoadAnnotations(MMCV_LoadAnnotations):
         repr_str += f'backend_args={self.backend_args})'
         return repr_str
 
+@TRANSFORMS.register_module()
+class LoadDepthAnnotations(MMCV_LoadAnnotations):
+    """Load annotations for depth estimation provided by dataset.
+
+    The annotation format is as the following:
+
+    .. code-block:: python
+
+        {
+            # Filename of depth ground truth file.
+            'depth_map_path': 'a/b/c'
+        }
+
+    After this module, the annotation has been changed to the format below:
+
+    .. code-block:: python
+
+        {
+            # in str
+            'depth_fields': List
+             # In uint8 type.
+            'gt_depth_map': np.ndarray (H, W)
+        }
+
+    Required Keys:
+
+    - depth_map_path (str): Path of depth ground truth file.
+
+    Added Keys:
+
+    - depth_fields (List)
+    - gt_depth_map (np.float32)
+
+    Args:
+        backend_args (dict): Arguments to instantiate a file backend.
+            See https://mmengine.readthedocs.io/en/latest/api/fileio.htm
+            for details. Defaults to None.
+            Notes: mmcv>=2.0.0rc4, mmengine>=0.2.0 required.
+    """
+
+    def __init__(
+        self,
+        backend_args=None,
+        imdecode_backend='pillow'
+    ) -> None:
+        super().__init__(
+            with_bbox=False,
+            with_label=False,
+            with_seg=False,
+            with_keypoints=False,
+            imdecode_backend=imdecode_backend,
+            backend_args=backend_args)
+
+        self.imdecode_backend = imdecode_backend
+
+    def _load_depth(self, results: dict) -> None:
+        """Private function to load semantic segmentation annotations.
+
+        Args:
+            results (dict): Result dict from :obj:``mmcv.BaseDataset``.
+
+        Returns:
+            dict: The dict contains loaded semantic segmentation annotations.
+        """
+        depth_map = results['depth_map_path']
+        depth_scale = results['depth_scale']
+
+        if 'npz' in depth_map:
+            depth_map_gt = np.squeeze(np.load(depth_map)['arr_0']).astype(np.float32) / depth_scale
+        else:
+            depth_map_gt = np.squeeze(np.load(depth_map)).astype(np.float32) / depth_scale
+
+        # modify if custom classes
+        results['gt_depth_map'] = depth_map_gt
+        results['depth_fields'].append('gt_depth_map')
+
+    def transform(self, results: dict) -> dict:
+        """Function to load multiple types annotations.
+
+        Args:
+            results (dict): Result dict from
+                :class:`mmengine.dataset.BaseDataset`.
+
+        Returns:
+            dict: The dict contains loaded bounding box, label and
+            semantic segmentation and keypoints annotations.
+        """
+
+        self._load_depth(results)
+        return results
+
+    def __repr__(self) -> str:
+        repr_str = self.__class__.__name__
+        repr_str += f"imdecode_backend='{self.imdecode_backend}', "
+        repr_str += f'backend_args={self.backend_args})'
+        return repr_str
+
+
+@TRANSFORMS.register_module()
+class DepthLoadAnnotationsNpy(object):
+    """Load annotations for depth estimation.
+
+    Args:
+        file_client_args (dict): Arguments to instantiate a FileClient.
+            See :class:`mmcv.fileio.FileClient` for details.
+            Defaults to ``dict(backend='disk')``.
+        imdecode_backend (str): Backend for :func:`mmcv.imdecode`. Default:
+            'pillow'
+    """
+    def __init__(self):
+        self.file_client = None
+        self.imdecode_backend = 'numpy'
+
+    def _resize_depth_preserve(self, depth_map_gt, shape):
+        """
+        Resizes depth map preserving all valid depth pixels
+        Multiple downsampled points can be assigned to the same pixel.
+
+        Parameters
+        ----------
+        depth : np.array [h,w]
+            Depth map
+        shape : tuple (H,W)
+            Output shape
+
+        Returns
+        -------
+        depth : np.array [H,W,1]
+            Resized depth map
+        """
+
+
+
+        h, w = depth_map_gt.shape
+        x = depth_map_gt.reshape(-1)
+        # Create coordinate grid
+        uv = np.mgrid[:h, :w].transpose(1, 2, 0).reshape(-1, 2)
+        # Filters valid points
+        idx = x > 0
+        crd, val = uv[idx], x[idx]
+        # Downsamples coordinates
+        crd[:, 0] = (crd[:, 0] * (shape[0] / h)).astype(np.int32)
+        crd[:, 1] = (crd[:, 1] * (shape[1] / w)).astype(np.int32)
+        # Filters points inside image
+        idx = (crd[:, 0] < shape[0]) & (crd[:, 1] < shape[1])
+        crd, val = crd[idx], val[idx]
+        # Creates downsampled depth image and assigns points
+        gt_depth = np.zeros(shape)
+        gt_depth[crd[:, 0], crd[:, 1]] = val
+
+        return gt_depth
+    def __call__(self, results):
+        """Call function to load multiple types annotations.
+
+        Args:
+            results (dict): Result dict from :obj:`depth.CustomDataset`.
+
+        Returns:
+            dict: The dict contains loaded depth estimation annotations.
+        """
+
+        filename = results['depth_map_path']
+
+        if 'Airsim' in filename:
+            if 'npz' in filename:
+                depth_gt_full = np.squeeze(np.load(filename)['arr_0'])
+            else:
+                depth_gt_full = np.squeeze(np.load(filename))
+
+            depth_gt_full[depth_gt_full>65] = 65.0
+            depth_gt = np.zeros_like(depth_gt_full)
+            depth_gt[::5,::5] = depth_gt_full[::5,::5]
+
+        else:
+            if 'npz' in filename:
+                depth_gt = np.squeeze(np.load(filename)['arr_0']) / results['depth_scale']
+            else:
+                depth_gt = np.squeeze(np.load(filename)) / results['depth_scale']
+            shp = depth_gt.shape
+            depth_gt = self._resize_depth_preserve(depth_gt,(shp[0] // 2, shp[1] // 2))
+            depth_gt = np.array(Image.fromarray(depth_gt).resize((shp[1],shp[0]),resample=Image.NEAREST))
+
+        results['depth_gt'] = depth_gt
+        results['depth_ori_shape'] = depth_gt.shape
+
+        results['depth_fields'].append('depth_gt')
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f"imdecode_backend='{self.imdecode_backend}')"
+        return repr_str
 
 @TRANSFORMS.register_module()
 class LoadImageFromNDArray(LoadImageFromFile):

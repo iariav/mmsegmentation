@@ -5,6 +5,7 @@ from typing import Optional, Sequence
 
 import mmcv
 import mmengine.fileio as fileio
+import numpy as np
 from mmengine.hooks import Hook
 from mmengine.runner import Runner
 
@@ -80,13 +81,18 @@ class SegVisualizationHook(Hook):
         """
         if self.draw is False or mode == 'train':
             return
-
+        # print(outputs)
+        # print(data_batch)
         if self.every_n_inner_iters(batch_idx, self.interval):
             for output in outputs:
+                if 'pred_depth' in output:
+                    continue
                 img_path = output.img_path
                 img_bytes = fileio.get(
                     img_path, backend_args=self.backend_args)
                 img = mmcv.imfrombytes(img_bytes, channel_order='rgb')
+                # img = np.asarray(data_batch['inputs'][0]).transpose(1, 2, 0)
+                # img = np.repeat(img[...], 3, axis=2)
                 window_name = f'{mode}_{osp.basename(img_path)}'
 
                 self._visualizer.add_datasample(

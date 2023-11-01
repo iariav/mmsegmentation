@@ -7,6 +7,7 @@ data_preprocessor = dict(
     bgr_to_rgb=True,
     pad_val=0,
     seg_pad_val=255)
+
 model = dict(
     type='EncoderDecoder',
     data_preprocessor=data_preprocessor,

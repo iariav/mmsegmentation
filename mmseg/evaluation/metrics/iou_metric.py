@@ -182,6 +182,8 @@ class IoUMetric(BaseMetric):
             torch.Tensor: The ground truth histogram on all classes.
         """
 
+        # print(label.shape)
+        # print(pred_label.shape)
         mask = (label != ignore_index)
         pred_label = pred_label[mask]
         label = label[mask]
