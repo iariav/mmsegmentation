@@ -121,6 +121,12 @@ def stack_batch(inputs: List[torch.Tensor],
                     'pad_shape': data_sample.gt_sem_seg.shape,
                     'padding_size': padding_size
                 })
+            elif 'asaf' in data_sample.img_path: ## for material segmentation
+                data_sample.set_metainfo({
+                    'img_shape': tensor.shape[-2:],
+                    'pad_shape': data_sample.gt_sem_seg.shape,
+                    'padding_size': padding_size
+                })
             else:
                 data_sample.set_metainfo({
                     'img_shape': tensor.shape[-2:],

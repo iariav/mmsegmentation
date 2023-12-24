@@ -331,3 +331,231 @@ class TwoDataloadersValLoop(BaseLoop):
             batch_idx=idx,
             data_batch=data_batch,
             outputs=outputs)
+
+
+@LOOPS.register_module()
+class MultiDataloadersIterBasedTrainLoop(BaseLoop):
+    """Loop for iter-based training.
+    Args:
+        runner (Runner): A reference of runner.
+        dataloader (Dataloader or dict): A dataloader object or a dict to
+            build a dataloader.
+        max_iters (int): Total training iterations.
+        val_begin (int): The iteration that begins validating.
+            Defaults to 1.
+        val_interval (int): Validation interval. Defaults to 1000.
+        dynamic_intervals (List[Tuple[int, int]], optional): The
+            first element in the tuple is a milestone and the second
+            element is a interval. The interval is used after the
+            corresponding milestone. Defaults to None.
+    """
+
+    def __init__(
+            self,
+            runner,
+            dataloader: Union[DataLoader, Dict],
+            dataloaders: List[DataLoader],
+            max_iters: int,
+            val_begin: int = 1,
+            val_interval: int = 1000,
+            dynamic_intervals: Optional[List[Tuple[int, int]]] = None) -> None:
+        super().__init__(runner, dataloaders[0])
+        self._max_iters = int(max_iters)
+        assert self._max_iters == max_iters, \
+            f'`max_iters` should be a integer number, but get {max_iters}'
+        self._max_epochs = 1  # for compatibility with EpochBasedTrainLoop
+        self._epoch = 0
+        self._iter = 0
+        self.val_begin = val_begin
+
+        self.val_interval = val_interval
+        # This attribute will be updated by `EarlyStoppingHook`
+        # when it is enabled.
+        self.stop_training = False
+
+        self.additional_dataloaders = []
+        for i in range(1,len(dataloaders)):
+            self.additional_dataloaders.append(runner.build_dataloader(dataloaders[i]))
+
+        if hasattr(self.dataloader.dataset, 'metainfo'):
+            self.runner.visualizer.dataset_meta = \
+                self.dataloader.dataset.metainfo
+        else:
+            print_log(
+                f'Dataset {self.dataloader.dataset.__class__.__name__} has no '
+                'metainfo. ``dataset_meta`` in visualizer will be '
+                'None.',
+                logger='current',
+                level=logging.WARNING)
+        # get the iterator of the dataloader
+        self.dataloader_iterators = []
+        self.dataloader_iterators.append(_InfiniteDataloaderIterator(self.dataloader))
+        for i in range(len(self.additional_dataloaders)):
+            self.dataloader_iterators.append(_InfiniteDataloaderIterator(self.additional_dataloaders[i]))
+
+        self.dynamic_milestones, self.dynamic_intervals = \
+            calc_dynamic_intervals(
+                self.val_interval, dynamic_intervals)
+
+    @property
+    def max_epochs(self):
+        """int: Total epochs to train model."""
+        return self._max_epochs
+
+    @property
+    def max_iters(self):
+        """int: Total iterations to train model."""
+        return self._max_iters
+
+    @property
+    def epoch(self):
+        """int: Current epoch."""
+        return self._epoch
+
+    @property
+    def iter(self):
+        """int: Current iteration."""
+        return self._iter
+
+    def run(self) -> None:
+        """Launch training."""
+        self.runner.call_hook('before_train')
+        # In iteration-based training loop, we treat the whole training process
+        # as a big epoch and execute the corresponding hook.
+        self.runner.call_hook('before_train_epoch')
+        while self._iter < self._max_iters and not self.stop_training:
+            self.runner.model.train()
+
+            for i in range(len(self.dataloader_iterators)):
+                data_batch = next(self.dataloader_iterators[i])
+                self.run_iter(data_batch)
+
+            self._decide_current_val_interval()
+            if (self.runner.val_loop is not None
+                    and self._iter >= self.val_begin
+                    and self._iter % self.val_interval == 0):
+                self.runner.val_loop.run()
+
+        self.runner.call_hook('after_train_epoch')
+        self.runner.call_hook('after_train')
+        return self.runner.model
+
+    def run_iter(self, data_batch: Sequence[dict]) -> None:
+        """Iterate one mini-batch.
+        Args:
+            data_batch (Sequence[dict]): Batch of data from dataloader.
+        """
+        self.runner.call_hook(
+            'before_train_iter', batch_idx=self._iter, data_batch=data_batch)
+        # Enable gradient accumulation mode and avoid unnecessary gradient
+        # synchronization during gradient accumulation process.
+        # outputs should be a dict of loss.
+        outputs = self.runner.model.train_step(
+            data_batch, optim_wrapper=self.runner.optim_wrapper)
+
+        self.runner.call_hook(
+            'after_train_iter',
+            batch_idx=self._iter,
+            data_batch=data_batch,
+            outputs=outputs)
+        self._iter += 1
+
+    def _decide_current_val_interval(self) -> None:
+        """Dynamically modify the ``val_interval``."""
+        step = bisect.bisect(self.dynamic_milestones, (self._iter + 1))
+        self.val_interval = self.dynamic_intervals[step - 1]
+
+
+@LOOPS.register_module()
+class MultiDataloadersValLoop(BaseLoop):
+    """Loop for iter-based training.
+    Args:
+        runner (Runner): A reference of runner.
+        dataloader (Dataloader or dict): A dataloader object or a dict to
+            build a dataloader.
+        max_iters (int): Total training iterations.
+        val_begin (int): The iteration that begins validating.
+            Defaults to 1.
+        val_interval (int): Validation interval. Defaults to 1000.
+        dynamic_intervals (List[Tuple[int, int]], optional): The
+            first element in the tuple is a milestone and the second
+            element is a interval. The interval is used after the
+            corresponding milestone. Defaults to None.
+    """
+
+    def __init__(self,
+                 runner,
+                 dataloader: Union[DataLoader, Dict],
+                 evaluator: Union[Evaluator, Dict, List],
+                 dataloaders: List[DataLoader],
+                 evaluators: List[dict],
+                 fp16: bool = False) -> None:
+        super().__init__(runner, dataloaders[0])
+
+        self.dataloaders = []
+        self.dataloaders.append(self.dataloader)
+        for i in range(1,len(dataloaders)):
+            self.dataloaders.append(runner.build_dataloader(dataloaders[i]))
+
+
+        self.evaluators = []
+        for i, evaluator in enumerate(evaluators):
+            if isinstance(evaluator, (dict, list)):
+                self.evaluators.append(runner.build_evaluator(evaluator))  # type: ignore
+
+        for i in range(len(dataloaders)):
+            if hasattr(self.dataloaders[i].dataset, 'metainfo'):
+                self.evaluators[i].dataset_meta = self.dataloaders[i].dataset.metainfo
+                self.runner.visualizer.dataset_meta = \
+                    self.dataloaders[i].dataset.metainfo
+            else:
+                print_log(
+                    f'Dataset {self.dataloaders[i].dataset.__class__.__name__} has no '
+                    'metainfo. ``dataset_meta`` in evaluator, metric and '
+                    'visualizer will be None.',
+                    logger='current',
+                    level=logging.WARNING)
+
+        self.fp16 = fp16
+        self.hierarchies = {0:'Semantic',
+                            1:'SemanticExtended',
+                            2:'Material',
+                            3:'MaterialMorphology'}
+
+    @property
+    def run(self) -> dict:
+        """Launch validation."""
+        self.runner.call_hook('before_val')
+        self.runner.call_hook('before_val_epoch')
+        self.runner.model.eval()
+
+        for i in range(len(self.evaluators)):
+            print('Run eval on ' + self.hierarchies[i] + ' estimation:')
+            for idx, data_batch in enumerate(self.dataloaders[i]):
+                self.run_iter(idx, data_batch,i)
+
+            metrics = self.evaluators[i].evaluate(len(self.dataloaders[i].dataset))
+
+        self.runner.call_hook('after_val_epoch', metrics=metrics)
+        self.runner.call_hook('after_val')
+        return metrics
+
+    @torch.no_grad()
+    def run_iter(self, idx, data_batch: Sequence[dict],hierarchy: int):
+        """Iterate one mini-batch.
+        Args:
+            data_batch (Sequence[dict]): Batch of data
+                from dataloader.
+        """
+        self.runner.call_hook(
+            'before_val_iter', batch_idx=idx, data_batch=data_batch)
+        # outputs should be sequence of BaseDataElement
+        # with autocast(enabled=self.fp16):
+        outputs = self.runner.model.val_step(data_batch)
+
+        self.evaluators[hierarchy].process(data_samples=outputs, data_batch=data_batch)
+        self.runner.call_hook(
+            'after_val_iter',
+            batch_idx=idx,
+            data_batch=data_batch,
+            outputs=outputs)

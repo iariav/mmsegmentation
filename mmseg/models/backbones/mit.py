@@ -159,7 +159,9 @@ class EfficientMultiheadAttention(MultiheadAttention):
         x_q = x
         if self.sr_ratio > 1:
             x_kv = nlc_to_nchw(x, hw_shape)
+            # print(x_kv.shape)
             x_kv = self.sr(x_kv)
+            # print(x_kv.shape)
             x_kv = nchw_to_nlc(x_kv)
             x_kv = self.norm(x_kv)
         else:

@@ -110,7 +110,7 @@ def inference_model(model: BaseSegmentor,
     """
     # prepare data
     data, is_batch = _preprare_data(img, model)
-
+    # data['inputs'][0] = data['inputs'][0].resize_(3,3072,3072)
     # forward the model
     with torch.no_grad():
         results = model.test_step(data)

@@ -27,6 +27,7 @@ from .psa_head import PSAHead
 from .psp_head import PSPHead
 from .san_head import SideAdapterCLIPHead
 from .segformer_head import SegformerHead
+from .segformer_multihead import SegformerMultiHead
 from .segmenter_mask_head import SegmenterMaskTransformerHead
 from .sep_aspp_head import DepthwiseSeparableASPPHead
 from .sep_fcn_head import DepthwiseSeparableFCNHead
@@ -34,6 +35,8 @@ from .setr_mla_head import SETRMLAHead
 from .setr_up_head import SETRUPHead
 from .stdc_head import STDCHead
 from .uper_head import UPerHead
+from .PixelFormer_head import PixelFormerHead
+from .vpd_depth_head import VPDDepthHead
 
 __all__ = [
     'FCNHead', 'PSPHead', 'ASPPHead', 'PSAHead', 'NLHead', 'GCHead', 'CCHead',
@@ -43,6 +46,6 @@ __all__ = [
     'SETRMLAHead', 'DPTHead', 'SETRMLAHead', 'SegmenterMaskTransformerHead',
     'SegformerHead', 'ISAHead', 'STDCHead', 'IterativeDecodeHead',
     'KernelUpdateHead', 'KernelUpdator', 'MaskFormerHead', 'Mask2FormerHead',
-    'LightHamHead', 'PIDHead','DPTHeadDepth', 'PixelFormerHead'
-    'DDRHead', 'VPDDepthHead', 'SideAdapterCLIPHead'
+    'LightHamHead', 'PIDHead','DPTHeadDepth', 'PixelFormerHead',
+    'DDRHead', 'VPDDepthHead', 'SideAdapterCLIPHead','SegformerMultiHead'
 ]

@@ -131,15 +131,15 @@ class EncoderDecoder(BaseSegmentor):
         map of the same size as input."""
 
         x = self.extract_feat(inputs)
-        if 'seg_map_path' in batch_img_metas[0] and 'ThermalLabels' in batch_img_metas[0]['seg_map_path']:
+        # if 'seg_map_path' in batch_img_metas[0] and 'ThermalLabels' in batch_img_metas[0]['seg_map_path']:
         # if 'seg_map_path' in batch_img_metas[0]:
-            seg_logits = self.decode_head.predict(x, batch_img_metas,
-                                                  self.test_cfg)
-            return seg_logits
-        else: # predict depth
-            pred_depth = self.auxiliary_head.predict(x, batch_img_metas,
-                                                  self.test_cfg)
-            return pred_depth
+        seg_logits = self.decode_head.predict(x, batch_img_metas,
+                                              self.test_cfg)
+        return seg_logits
+        # else: # predict depth
+        #     pred_depth = self.auxiliary_head.predict(x, batch_img_metas,
+        #                                           self.test_cfg)
+        #     return pred_depth
 
 
     def _decode_head_forward_train(self, inputs: List[Tensor],
@@ -185,7 +185,8 @@ class EncoderDecoder(BaseSegmentor):
         x = self.extract_feat(inputs)
 
         losses = dict()
-
+        # for i in range(len(x)):
+        #     print(x[i].shape)
         if 'gt_sem_seg' in data_samples[0]:
             loss_decode = self._decode_head_forward_train(x, data_samples)
             losses.update(loss_decode)
@@ -299,12 +300,12 @@ class EncoderDecoder(BaseSegmentor):
         # print(data_samples)
         # batch_img_metas[0]['seg_map_path'] = 'ThermalLabels'
         # if 'SegmentationTrainingData' in batch_img_metas[0]['img_path']:
-        if 'seg_map_path' in batch_img_metas[0]:
-            seg_logits = self.inference(inputs, batch_img_metas)
-            return self.postprocess_result(seg_logits, data_samples)
-        else: # predict depth
-            pred_depth = self.inference(inputs, batch_img_metas)
-            return self.postprocess_depth_result(pred_depth, data_samples)
+        # if 'seg_map_path' in batch_img_metas[0]:
+        seg_logits = self.inference(inputs, batch_img_metas)
+        return self.postprocess_result(seg_logits, data_samples)
+        # else: # predict depth
+        #     pred_depth = self.inference(inputs, batch_img_metas)
+        #     return self.postprocess_depth_result(pred_depth, data_samples)
     def _forward(self,
                  inputs: Tensor,
                  data_samples: OptSampleList = None) -> Tensor:
@@ -320,12 +321,12 @@ class EncoderDecoder(BaseSegmentor):
             Tensor: Forward output of model without any post-processes.
         """
         x = self.extract_feat(inputs)
-        pred_seg = self.decode_head.forward(x) # self.decode_head.predict(x, data_samples, self.test_cfg)
+        # pred_seg = self.decode_head.forward(x) # self.decode_head.predict(x, data_samples, self.test_cfg)
         # pred_seg = F.interpolate(pred_seg,scale_factor=4,mode='bilinear')
         # pred_seg = torch.argmax(pred_seg, dim=1)
-        pred_depth = self.auxiliary_head.forward(x)
-        return pred_seg, pred_depth
-        # return self.decode_head.forward(x),self.auxiliary_head.forward(x)
+        # pred_depth = self.auxiliary_head.forward(x)
+        # return pred_seg, pred_depth
+        return self.decode_head.forward(x)#,self.auxiliary_head.forward(x)
 
     def slide_inference(self, inputs: Tensor,
                         batch_img_metas: List[dict]) -> Tensor:

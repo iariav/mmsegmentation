@@ -103,6 +103,8 @@ class LoadAnnotations(MMCV_LoadAnnotations):
             img_bytes, flag='unchanged',
             backend=self.imdecode_backend).squeeze().astype(np.uint8)
 
+        if len(gt_semantic_seg.shape) > 2 and gt_semantic_seg.shape[2] > 1:
+            gt_semantic_seg = gt_semantic_seg[:,:,0]
         # reduce zero_label
         if self.reduce_zero_label is None:
             self.reduce_zero_label = results['reduce_zero_label']

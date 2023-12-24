@@ -28,6 +28,7 @@ from .synapse import SynapseDataset
 from .probot import ProbotDataset, ProbotDepthDataset
 from .DDAD import DdadDepthDataset
 from .MSdataset import MSDepthDataset
+from .materials import SemanticDataset, SemanticExtendedDataset, MaterialsDataset, MorphologyDataset
 # yapf: disable
 from .transforms import (CLAHE, AdjustGamma, Albu, BioMedical3DPad,
                          BioMedical3DRandomCrop, BioMedical3DRandomFlip,
@@ -64,5 +65,5 @@ __all__ = [
     'MapillaryDataset_v2', 'Albu', 'LEVIRCDDataset',
     'LoadMultipleRSImageFromFile', 'LoadSingleRSImageFromFile',
     'ConcatCDInput', 'BaseCDDataset', 'DSDLSegDataset', 'BDD100KDataset',
-    'NYUDataset'
+    'NYUDataset', 'SemanticDataset', 'SemanticExtendedDataset', 'MaterialsDataset', 'MorphologyDataset'
 ]

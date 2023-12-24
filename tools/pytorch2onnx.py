@@ -94,7 +94,7 @@ def pytorch2onnx(model,
     else:
         num_classes = model.decode_head.num_classes
 
-    mm_inputs = _demo_mm_inputs(input_shape, num_classes)
+    mm_inputs = _demo_mm_inputs(input_shape, num_classes[1])
 
     imgs = mm_inputs.pop('imgs')
     img_metas = mm_inputs.pop('img_metas')
@@ -114,7 +114,10 @@ def pytorch2onnx(model,
             model, (img_list[0], ),
             output_file,
             input_names=["input"],
-            output_names=["output_seg","output_depth"],
+            output_names=["output_segmentation",
+                          "output_segmentationextended",
+                          "output_material",
+                          "output_morphology"],
             export_params=True,
             keep_initializers_as_inputs=False,
             verbose=show,
@@ -173,7 +176,7 @@ def parse_args():
         '--shape',
         type=int,
         nargs='+',
-        default=[672,1248],
+        default=[2048,2048],
         help='input image size')
     args = parser.parse_args()
     return args
