@@ -1,15 +1,15 @@
 _base_ = [
-    '../_base_/models/segformer_mit-b0.py',
+    # './segnext_mscan-t_1xb16-adamw-160k_ade20k-512x512.py',
     # '../_base_/datasets/probot_seg_depth_mmseg2.py',
     '../_base_/default_runtime.py'
 ]
 
 # dataset settings
 
+checkpoint_file = 'https://download.openmmlab.com/mmsegmentation/v0.5/pretrain/segnext/mscan_l_20230227-cef260d4.pth'  # noqa
 dataset_type = 'MaterialsDataset'
 data_root = '/hdd_data/asaf/ido_test/AllData_split/'
 crop_size = (448, 448)
-load_from = '/home/iariav/Deep/Pytorch/mmsegmentation/work_dirs/Materials/b4_material_soft_hc_p448_lebanon_data/iter_420000.pth'
 
 #######       DATA PIPELINES       #######
 
@@ -21,9 +21,9 @@ train_seg_pipeline = [
        scale=(512, 512),
        ratio_range=(0.875, 1.5),
        keep_ratio=True),
+    dict(type='RandomCrop', crop_size=crop_size, cat_max_ratio=0.75),
     # dict(type='RandomRotFlip', rotate_prob=0.0, flip_prob=0.5),
     dict(type='RandomFlip', prob=0.5),
-    dict(type='RandomCrop', crop_size=crop_size, cat_max_ratio=0.75),
     dict(type='PhotoMetricDistortion'),
     dict(type='PackSegInputs')
 ]
@@ -34,23 +34,6 @@ test_pipeline = [
     # dict(type='CenterCrop', crop_size=(512, 512)),
     # dict(type='Resize', scale=(1280, 720), keep_ratio=True),
     dict(type='PackSegInputs')
-]
-
-img_ratios = [1.0]
-tta_pipeline = [
-    dict(type='LoadImageFromFile', backend_args=None),
-    dict(
-        type='TestTimeAug',
-        transforms=[
-            [
-                dict(type='Resize', scale_factor=r, keep_ratio=True)
-                for r in img_ratios
-            ],
-            [
-                dict(type='RandomFlip', prob=0., direction='horizontal'),
-                dict(type='RandomFlip', prob=1., direction='horizontal')
-            ], [dict(type='LoadAnnotations')], [dict(type='PackSegInputs')]
-        ])
 ]
 
 #######       DATASETS       #######
@@ -150,7 +133,7 @@ dataset_morphology_val = dict(
 #######       TRAIN DATALOADERS       #######
 
 train_dataloader_semantic = dict(
-    batch_size=8,
+    batch_size=16,
     num_workers=8,
     dataset=dict(
         type='RepeatDataset',
@@ -161,7 +144,7 @@ train_dataloader_semantic = dict(
 )
 
 train_dataloader_semanticextended = dict(
-    batch_size=8,
+    batch_size=16,
     num_workers=8,
     dataset=dict(
         type='RepeatDataset',
@@ -172,7 +155,7 @@ train_dataloader_semanticextended = dict(
 )
 
 train_dataloader_material = dict(
-    batch_size=8,
+    batch_size=16,
     num_workers=8,
     dataset=dict(
         type='RepeatDataset',
@@ -183,7 +166,7 @@ train_dataloader_material = dict(
 )
 
 train_dataloader_morphology = dict(
-    batch_size=8,
+    batch_size=16,
     num_workers=8,
     dataset=dict(
         type='RepeatDataset',
@@ -239,10 +222,11 @@ val_dataloader_morphology = dict(
     sampler=dict(type='DefaultSampler', shuffle=False)  # necessary
 )
 
-test_dataloader = val_dataloader_semanticextended
+test_dataloader = val_dataloader_semantic
 
 
 # model settings
+ham_norm_cfg = dict(type='GN', num_groups=32, requires_grad=True)
 norm_cfg = dict(type='SyncBN', requires_grad=True)
 find_unused_parameters = True
 
@@ -257,35 +241,52 @@ model = dict(
         pad_val=0,
         seg_pad_val=255),
     backbone=dict(
-        # init_cfg=dict(type='Pretrained', checkpoint='pretrain/mit_b4_mmseg2.pth'),
-        embed_dims=64,
-        num_layers=[3, 8, 27, 3]),
+        type='MSCAN',
+        init_cfg=dict(type='Pretrained', checkpoint=checkpoint_file),
+        embed_dims=[64, 128, 320, 512],
+        mlp_ratios=[8, 8, 4, 4],
+        drop_rate=0.0,
+        drop_path_rate=0.3,
+        depths=[3, 5, 27, 3],
+        attention_kernel_sizes=[5, [1, 7], [1, 11], [1, 21]],
+        attention_kernel_paddings=[2, [0, 3], [0, 5], [0, 10]],
+        act_cfg=dict(type='GELU'),
+        norm_cfg=dict(type='BN', requires_grad=True)),
     decode_head=dict(
-        type='SegformerMultiHead',
-        in_channels=[64, 128, 320, 512],
-        in_index=[0, 1, 2, 3],
-        channels=256,
+        type='LightHamMultiHead',
+        in_channels=[128, 320, 512],
+        in_index=[1, 2, 3],
+        channels=1024,
+        ham_channels=256,
         dropout_ratio=0.1,
         num_classes=[10, 12, 28, 40],
-        norm_cfg=norm_cfg,
+        norm_cfg=ham_norm_cfg,
         align_corners=False,
         loss_decode=[
-            dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=0.1, loss_name='loss_Semantic'),
+            dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=0.5, loss_name='loss_Semantic'),
             dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0, loss_name='loss_SemanticExtended'),
             dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0, loss_name='loss_Material'),
             dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0, loss_name='loss_MaterialMorphology')
-        ]),
+        ],
+        ham_kwargs = dict(
+            MD_S=1,
+            MD_R=16,
+            train_steps=6,
+            eval_steps=7,
+            inv_t=100,
+            rand_init=True),
+),
     # model training and testing settings
     train_cfg=dict(),
-    test_cfg=dict(mode='slide', crop_size=crop_size, stride=(crop_size[0]//2,crop_size[0]//2),hierarchy=1))
-    # test_cfg=dict(mode='whole'))
+    test_cfg=dict(mode='whole'))
 
 # optimizer
 optim_wrapper = dict(
     type='OptimWrapper',
-    optimizer=dict(type='AdamW', lr=1e-5, betas=(0.9, 0.999), weight_decay=0.01),
+    optimizer=dict(type='AdamW', lr=0.00006, betas=(0.9, 0.999), weight_decay=0.01),
     paramwise_cfg=dict(custom_keys={'pos_block': dict(decay_mult=0.),
-                                                 'norm': dict(decay_mult=0.)
+                                                 'norm': dict(decay_mult=0.),
+                                                 'head': dict(lr_mult=10.)
                                                  }),
     clip_grad=dict(max_norm=1, norm_type=2))
 
@@ -294,10 +295,10 @@ param_scheduler = [
         type='LinearLR', start_factor=1e-8, by_epoch=False, begin=0, end=8000),
     dict(
         type='PolyLR',
-        eta_min=1e-8,
-        power=0.9,
+        eta_min=0.0,
+        power=1.0,
         begin=8000,
-        end=160000,
+        end=420000,
         by_epoch=False,
     )
 ]
@@ -313,7 +314,7 @@ train_cfg = dict(type='MultiDataloadersIterBasedTrainLoop',
                               train_dataloader_material,
                               train_dataloader_morphology
                  ],
-                 max_iters=160000,
+                 max_iters=420000,
                  val_interval=4000
                  )
 # val_cfg = dict(type='MultiDataloadersValLoop',
@@ -329,7 +330,7 @@ train_cfg = dict(type='MultiDataloadersIterBasedTrainLoop',
 #                                val_evaluator
 #                  ])
 val_cfg = dict(type='ValLoop') # Use the default validation loop.
-test_cfg = dict(type='TestLoop') # Use the default test loop.
+test_cfg = val_cfg # Use the default test loop.
 
 default_hooks = dict(
     # record the time of every iterations.
@@ -355,4 +356,4 @@ vis_backends = [dict(type='LocalVisBackend'),
 visualizer = dict(
     type='SegLocalVisualizer', vis_backends=vis_backends, name='visualizer')
 
-work_dir = '/home/iariav/Deep/Pytorch/mmsegmentation/work_dirs/Materials/b4_material_p448_OmerData'
+work_dir = '/home/iariav/Deep/Pytorch/mmsegmentation/work_dirs/Materials/segnext_l_material'

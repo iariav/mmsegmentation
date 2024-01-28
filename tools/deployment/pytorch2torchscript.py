@@ -69,7 +69,7 @@ def _demo_mm_inputs(input_shape, num_classes):
     rng = np.random.RandomState(0)
     imgs = rng.rand(*input_shape)
     segs = rng.randint(
-        low=0, high=num_classes - 1, size=(N, 1, H, W)).astype(np.uint8)
+        low=0, high=num_classes[1] - 1, size=(N, 1, H, W)).astype(np.uint8)
     img_metas = [{
         'img_shape': (H, W, C),
         'ori_shape': (H, W, C),
@@ -114,7 +114,7 @@ def pytorch2libtorch(model,
     imgs = mm_inputs.pop('imgs')
 
     # replace the original forword with forward_dummy
-    model.forward = model.forward_dummy
+    # model.forward = model.forward_dummy
     model.eval()
     traced_model = torch.jit.trace(
         model,

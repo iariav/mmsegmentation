@@ -26,9 +26,15 @@ class SegTTAModel(BaseTTAModel):
         for data_samples in data_samples_list:
             seg_logits = data_samples[0].seg_logits.data
             logits = torch.zeros(seg_logits.shape).to(seg_logits)
+
+            # print(len(data_samples))
             for data_sample in data_samples:
                 seg_logit = data_sample.seg_logits.data
+                # print(seg_logit.shape)
                 if self.module.out_channels > 1:
+                    # print('logits shape is {}'.format(logits.shape))
+                    # print('logits before softmax shape is {}'.format(seg_logit.shape))
+                    # print('softmax shape is {}'.format((seg_logit.softmax(dim=0)).shape))
                     logits += seg_logit.softmax(dim=0)
                 else:
                     logits += seg_logit.sigmoid()

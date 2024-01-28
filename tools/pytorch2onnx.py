@@ -114,10 +114,7 @@ def pytorch2onnx(model,
             model, (img_list[0], ),
             output_file,
             input_names=["input"],
-            output_names=["output_segmentation",
-                          "output_segmentationextended",
-                          "output_material",
-                          "output_morphology"],
+            output_names=["output_morphology"],
             export_params=True,
             keep_initializers_as_inputs=False,
             verbose=show,
@@ -141,7 +138,8 @@ def pytorch2onnx(model,
 
         # check the numerical value
         # get pytorch output
-        pytorch_result = model(img_list[0], img_meta_list)[0].detach().numpy()
+        model.eval()
+        pytorch_result = model(img_list[0])[0].detach().numpy()
 
         # get onnx output
         input_all = [node.name for node in onnx_model.graph.input]
@@ -152,15 +150,22 @@ def pytorch2onnx(model,
         assert (len(net_feed_input) == 1)
         sess = rt.InferenceSession(output_file)
         onnx_result = sess.run(
-            None, {net_feed_input[0]: img_list[0].detach().numpy()})[0]
+            None, {net_feed_input[0]: img_list[0].detach().numpy()})[0][0]
         print("pytorch_result\n")
-        print(pytorch_result)
+        print(pytorch_result.shape)
         print("onnx_result\n")
-        print(onnx_result)
-        if not np.allclose(pytorch_result, onnx_result,rtol=1e-1):
-            raise ValueError(
-                'The outputs are different between Pytorch and ONNX')
-        print('The outputs are same between Pytorch and ONNX')
+        print(onnx_result.shape)
+        np.testing.assert_allclose(pytorch_result,
+                                   onnx_result,
+                                   rtol=1e-03,
+                                   atol=1e-05)
+
+        print("Exported model has been tested with ONNXRuntime, and the result looks good!")
+
+        # if not np.allclose(pytorch_result, onnx_result,rtol=1e-1):
+        #     raise ValueError(
+        #         'The outputs are different between Pytorch and ONNX')
+        # print('The outputs are same between Pytorch and ONNX')
 
 
 def parse_args():

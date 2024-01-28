@@ -302,6 +302,9 @@ class EncoderDecoder(BaseSegmentor):
         # if 'SegmentationTrainingData' in batch_img_metas[0]['img_path']:
         # if 'seg_map_path' in batch_img_metas[0]:
         seg_logits = self.inference(inputs, batch_img_metas)
+        # res = self.postprocess_result(seg_logits, data_samples)
+        # res_data = res[0].pred_sem_seg.data
+        # return res_data
         return self.postprocess_result(seg_logits, data_samples)
         # else: # predict depth
         #     pred_depth = self.inference(inputs, batch_img_metas)
@@ -352,7 +355,7 @@ class EncoderDecoder(BaseSegmentor):
         h_stride, w_stride = self.test_cfg.stride
         h_crop, w_crop = self.test_cfg.crop_size
         batch_size, _, h_img, w_img = inputs.size()
-        out_channels = self.out_channels
+        out_channels = self.num_classes[self.test_cfg.hierarchy]#self.out_channels
         h_grids = max(h_img - h_crop + h_stride - 1, 0) // h_stride + 1
         w_grids = max(w_img - w_crop + w_stride - 1, 0) // w_stride + 1
         preds = inputs.new_zeros((batch_size, out_channels, h_img, w_img))

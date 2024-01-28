@@ -228,13 +228,15 @@ class SegformerMultiHead(BaseDecodeHead):
         """
 
         # for hierarchy in self.hierarchies:
-        hierarchy = 'SemanticExtended'#((batch_img_metas[0])['seg_map_path']).split('/Labels_mask_')[1].split('/')[0]
+        # hierarchy = 'MaterialMorphology'#((batch_img_metas[0])['seg_map_path']).split('/Labels_mask_')[1].split('/')[0]
+        hierarchy = 'SemanticExtended'
         # hierarchy = ((batch_img_metas[0])['seg_map_path']).split('/Labels_mask_')[1].split('/')[0]
         seg_logits = seg_logits[self.hierarchies[hierarchy]]
-
+        # print('called predict_by_feat')
+        # print(batch_img_metas[0])
         seg_logits = resize(
             input=seg_logits,
-            size=batch_img_metas[0]['img_shape'],
+            size=batch_img_metas[0]['img_shape'], # was img_shape
             mode='bilinear',
             align_corners=self.align_corners)
         return seg_logits
