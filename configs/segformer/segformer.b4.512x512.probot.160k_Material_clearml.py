@@ -7,9 +7,9 @@ _base_ = [
 # dataset settings
 
 dataset_type = 'MaterialsDataset'
-data_root = '/hdd_data/asaf/ido_test/AllData_split/'
+data_root = '/data/'
 crop_size = (448, 448)
-load_from = '/home/iariav/Deep/Pytorch/mmsegmentation/work_dirs/Materials/b4_material_soft_hc_p448_lebanon_data/iter_420000.pth'
+load_from = 'work_dirs/iter_420000.pth'
 
 #######       DATA PIPELINES       #######
 
@@ -21,8 +21,8 @@ train_seg_pipeline = [
        scale=(512, 512),
        ratio_range=(0.875, 1.5),
        keep_ratio=True),
-    dict(type='RandomRotFlip', rotate_prob=0.0, flip_prob=0.5),
-    # dict(type='RandomFlip', prob=0.5),
+    # dict(type='RandomRotFlip', rotate_prob=0.0, flip_prob=0.5),
+    dict(type='RandomFlip', prob=0.5),
     dict(type='RandomCrop', crop_size=crop_size, cat_max_ratio=0.75),
     dict(type='PhotoMetricDistortion'),
     dict(type='PackSegInputs')
@@ -150,7 +150,7 @@ dataset_morphology_val = dict(
 #######       TRAIN DATALOADERS       #######
 
 train_dataloader_semantic = dict(
-    batch_size=16,
+    batch_size=32,
     num_workers=8,
     dataset=dict(
         type='RepeatDataset',
@@ -161,7 +161,7 @@ train_dataloader_semantic = dict(
 )
 
 train_dataloader_semanticextended = dict(
-    batch_size=16,
+    batch_size=32,
     num_workers=8,
     dataset=dict(
         type='RepeatDataset',
@@ -172,7 +172,7 @@ train_dataloader_semanticextended = dict(
 )
 
 train_dataloader_material = dict(
-    batch_size=16,
+    batch_size=32,
     num_workers=8,
     dataset=dict(
         type='RepeatDataset',
@@ -183,7 +183,7 @@ train_dataloader_material = dict(
 )
 
 train_dataloader_morphology = dict(
-    batch_size=16,
+    batch_size=32,
     num_workers=8,
     dataset=dict(
         type='RepeatDataset',
@@ -257,7 +257,7 @@ model = dict(
         pad_val=0,
         seg_pad_val=255),
     backbone=dict(
-        init_cfg=dict(type='Pretrained', checkpoint='pretrain/mit_b4_mmseg2.pth'),
+        # init_cfg=dict(type='Pretrained', checkpoint='pretrain/mit_b4_mmseg2.pth'),
         embed_dims=64,
         num_layers=[3, 8, 27, 3]),
     decode_head=dict(
@@ -277,8 +277,8 @@ model = dict(
         ]),
     # model training and testing settings
     train_cfg=dict(),
-    # test_cfg=dict(mode='slide', crop_size=crop_size, stride=(crop_size[0]//2,crop_size[0]//2),hierarchy=1))
-    test_cfg=dict(mode='whole'))
+    test_cfg=dict(mode='slide', crop_size=crop_size, stride=(crop_size[0]//2,crop_size[0]//2),hierarchy=1))
+    # test_cfg=dict(mode='whole'))
 
 # optimizer
 optim_wrapper = dict(
@@ -291,13 +291,13 @@ optim_wrapper = dict(
 
 param_scheduler = [
     dict(
-        type='LinearLR', start_factor=1e-8, by_epoch=False, begin=0, end=8000),
+        type='LinearLR', start_factor=1e-7, by_epoch=False, begin=0, end=8000),
     dict(
         type='PolyLR',
         eta_min=1e-8,
         power=0.9,
         begin=8000,
-        end=450000,
+        end=420000,
         by_epoch=False,
     )
 ]
@@ -313,7 +313,7 @@ train_cfg = dict(type='MultiDataloadersIterBasedTrainLoop',
                               train_dataloader_material,
                               train_dataloader_morphology
                  ],
-                 max_iters=450000,
+                 max_iters=420000,
                  val_interval=4000
                  )
 # val_cfg = dict(type='MultiDataloadersValLoop',
@@ -355,4 +355,4 @@ vis_backends = [dict(type='LocalVisBackend'),
 visualizer = dict(
     type='SegLocalVisualizer', vis_backends=vis_backends, name='visualizer')
 
-work_dir = '/home/iariav/Deep/Pytorch/mmsegmentation/work_dirs/Materials/b4_material_p448_OmerDataOnly'
+work_dir = 'work_dirs/Materials/b4_material_clear'

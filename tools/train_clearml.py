@@ -9,7 +9,9 @@ from mmengine.logging import print_log
 from mmengine.runner import Runner
 
 from mmseg.registry import RUNNERS
-
+import torch
+# ClearML
+from clearml import Task
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a segmentor')
@@ -60,6 +62,27 @@ def main():
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
 
+    # init cleaml
+    output_uri=''
+    Task.add_requirements(package_name='pip', package_version='23.1.2')
+    task = Task.init(project_name='c4i_smart_terrain',
+                     task_name='Material_pilot',
+                     output_uri=output_uri)
+    task.set_base_docker(docker_image='artifactory.il.edge.io/land_c4i-mapcore-docker/smart_terrain_segmentation:latest_with_data',
+                         docker_arguments=['-e HYDRA_FULL_ERROR=1',
+                                           '-e CLEARML_AGENT__agent__package_manager__pip_version=23.1.2',
+                                           '-e CLEARML_EXTRA_PIP_INSTALL_FLAGS=--use-deprecated=legacy-resolver'],
+                         # docker_setup_bash_script=['pip install scikit-image==0.20.0',
+                         #                           'pip install super-gradients==3.1.2']
+                                                   )
+    # task.add_tags(tags=[])
+    # dv = DataView(name='')
+    # dv.add_query(dataset_name='Turbulence_External_Data_REDS',
+    #              version_id='2d24eb24085d481f8e9b2af2b436b3ce')
+    # task.connect(dv)
+
+    # task.execute_remotely('runai-preemption-gpu4', clone=False, exit_process=True)
+
     # work_dir is determined in this priority: CLI > segment in file > filename
     if args.work_dir is not None:
         # update configs according to CLI args if args.work_dir is not None
@@ -97,6 +120,11 @@ def main():
         runner = RUNNERS.build(cfg)
 
     # start training
+    print(torch.cuda.is_available())
+    print(torch.cuda.device_count())
+    print(torch.cuda.current_device())
+    print(torch.cuda.device(0))
+    print(torch.cuda.get_device_name())
     runner.train()
 
 

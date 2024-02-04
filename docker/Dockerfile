@@ -5,6 +5,8 @@ ARG MMCV="2.0.0rc1"
 
 FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-devel
 
+USER root
+
 ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0+PTX"
 ENV TORCH_NVCC_FLAGS="-Xfatbin -compress-all"
 ENV CMAKE_PREFIX_PATH="$(dirname $(which conda))/../"
@@ -29,9 +31,17 @@ RUN ["/bin/bash", "-c", "pip install openmim"]
 RUN ["/bin/bash", "-c", "mim install mmengine"]
 RUN ["/bin/bash", "-c", "mim install mmcv>=${MMCV}"]
 
+
 # Install MMSegmentation
 RUN git clone -b main https://github.com/iariav/mmsegmentation.git /mmsegmentation
 WORKDIR /mmsegmentation
+
+COPY AllData_split /data
+
 ENV FORCE_CUDA="1"
 RUN pip install -r requirements.txt
 RUN pip install --no-cache-dir -e .
+
+# RUN pip install allegroai
+RUN pip install clearml
+RUN pip install clearml-session
